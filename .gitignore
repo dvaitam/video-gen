@@ -1,0 +1,8 @@
+node_modules/
+uploads/
+videos/
+sora2.service
+.env
+.DS_Store
+npm-debug.log*
+*.log
