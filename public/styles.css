@@ -15,11 +15,34 @@ body {
   padding: 2rem 1rem;
 }
 
+body.modal-open {
+  overflow: hidden;
+}
+
 .app {
   max-width: 960px;
   width: 100%;
   display: grid;
   gap: 1.5rem;
+}
+
+.app__content {
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(240px, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.app__main {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.app__sidebar {
+  position: sticky;
+  top: 2rem;
+  align-self: start;
 }
 
 .app__header h1 {
@@ -38,6 +61,14 @@ body {
   border-radius: 16px;
   padding: 1.5rem;
   box-shadow: 0 20px 40px -25px rgba(15, 23, 42, 0.9);
+}
+
+.card--history h2,
+.card--preview h2,
+.card--remote h2,
+.card--form h2 {
+  margin-top: 0;
+  margin-bottom: 1rem;
 }
 
 .form {
@@ -66,6 +97,46 @@ body {
   background: rgba(15, 23, 42, 0.8);
   color: inherit;
   resize: vertical;
+}
+
+.card--form .form__grid {
+  grid-template-columns: 1fr;
+}
+
+.camera-control button {
+  padding: 0.75rem 1.25rem;
+  border-radius: 999px;
+  border: none;
+  background: rgba(96, 165, 250, 0.25);
+  color: #bfdbfe;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.camera-control button:hover:not(:disabled) {
+  background: rgba(96, 165, 250, 0.45);
+  transform: translateY(-1px);
+}
+
+.camera-preview {
+  margin-top: 0.75rem;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  display: block;
+}
+
+.camera-actions {
+  margin-top: 0.75rem;
+  display: flex;
+  gap: 0.75rem;
+}
+
+.camera-actions button {
+  flex: 1 1 auto;
+  padding: 0.65rem 1rem;
 }
 
 .form__field textarea:focus,
@@ -193,6 +264,183 @@ button.remote-button:disabled,
   border: 1px solid rgba(148, 163, 184, 0.2);
 }
 
+.history-gallery {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1.25rem;
+}
+
+.history-thumb {
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.85);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.history-thumb:focus-within,
+.history-thumb:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 30px -20px rgba(99, 102, 241, 0.8);
+}
+
+.video-modal {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.video-modal--open {
+  display: flex;
+}
+
+.video-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.9);
+  backdrop-filter: blur(6px);
+}
+
+.video-modal__content {
+  position: relative;
+  width: min(1280px, 90vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  z-index: 1;
+}
+
+.video-modal__video {
+  width: 100%;
+  height: auto;
+  max-height: 80vh;
+  border-radius: 16px;
+  background: black;
+  box-shadow: 0 20px 50px -20px rgba(15, 23, 42, 0.9);
+}
+
+.video-modal__close {
+  position: absolute;
+  top: -2.75rem;
+  right: 0;
+  border: none;
+  background: rgba(15, 23, 42, 0.85);
+  color: #f8fafc;
+  font-size: 1.5rem;
+  line-height: 1;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.video-modal__close:hover {
+  background: rgba(30, 41, 59, 0.9);
+  transform: scale(1.05);
+}
+
+.history-thumb__button {
+  display: block;
+  border: none;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+}
+
+.history-thumb__button:focus-visible {
+  outline: 3px solid rgba(99, 102, 241, 0.7);
+  outline-offset: 4px;
+}
+
+.history-thumb__video {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+  background: black;
+}
+
+.history-thumb__caption {
+  padding: 0.85rem 1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.history-thumb__title {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #e2e8f0;
+  line-height: 1.3;
+  max-height: 3.2em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-thumb__meta {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.references-grid {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 1rem;
+}
+
+.reference-thumb {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  background: rgba(15, 23, 42, 0.8);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.reference-thumb:hover,
+.reference-thumb:focus-within {
+  transform: translateY(-3px);
+  border-color: rgba(96, 165, 250, 0.6);
+  box-shadow: 0 14px 28px -18px rgba(96, 165, 250, 0.8);
+}
+
+.reference-thumb--selected {
+  border-color: rgba(59, 130, 246, 0.9);
+  box-shadow: 0 20px 35px -18px rgba(59, 130, 246, 0.9);
+}
+
+.reference-thumb__button {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  border: none;
+  cursor: pointer;
+  background: transparent;
+}
+
+.reference-thumb__image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
 .history-entry__meta,
 .remote-entry__meta {
   display: flex;
@@ -261,15 +509,42 @@ button.remote-button:disabled,
   cursor: progress;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 900px) {
   body {
     padding: 1.5rem 0.75rem;
+  }
+
+  .app__content {
+    grid-template-columns: 1fr;
+  }
+
+  .app__sidebar {
+    position: static;
+  }
+}
+
+@media (max-width: 600px) {
+  .history-gallery {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 1rem;
+  }
+
+  .card--form .form__grid {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+
+  .form__field textarea {
+    min-height: 120px;
   }
 
   .history-entry,
   .remote-entry {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .references-grid {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   }
 
   .history-entry button,

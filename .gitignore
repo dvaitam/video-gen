@@ -1,6 +1,7 @@
 node_modules/
 uploads/
 videos/
+references/
 sora2.service
 .env
 .DS_Store

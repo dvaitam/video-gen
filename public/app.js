@@ -17,28 +17,208 @@ const loadRemoteButton = document.getElementById('loadRemoteButton');
 const remoteList = document.getElementById('remoteList');
 const remoteEmpty = document.getElementById('remoteEmpty');
 const remoteStatus = document.getElementById('remoteStatus');
+const fullVideoModal = document.getElementById('fullVideoModal');
+const fullVideoPlayer = document.getElementById('fullVideoPlayer');
+const modalCloseButton = document.getElementById('modalCloseButton');
+const providerSelect = document.getElementById('providerSelect');
+const referenceUrlInput = document.getElementById('referenceUrlInput');
+const referencesList = document.getElementById('referencesList');
+const referencesEmpty = document.getElementById('referencesEmpty');
+const referencesStatus = document.getElementById('referencesStatus');
+const openCameraButton = document.getElementById('openCameraButton');
+const cameraPreview = document.getElementById('cameraPreview');
+const captureFrameButton = document.getElementById('captureFrameButton');
+const closeCameraButton = document.getElementById('closeCameraButton');
+const cameraActions = document.querySelector('.camera-actions');
 
-const LOCAL_STORAGE_KEY = 'sora2-openai-api-key';
 const MODEL_STORAGE_KEY = 'sora2-video-model';
 const API_ENDPOINT = '/api/generate';
 const HISTORY_ENDPOINT = '/api/videos';
 const REMOTE_LIST_ENDPOINT = '/api/videos/remote/list';
 const REMOTE_DOWNLOAD_ENDPOINT = '/api/videos/remote/download';
+const REFERENCES_ENDPOINT = '/api/references';
+
+const PROVIDER_STORAGE_KEY = 'sora2-provider';
+const PROVIDER_KEY_MAP = {
+  openai: 'sora2-api-key-openai',
+  google: 'sora2-api-key-google',
+};
+const PROVIDER_DEFAULT_MODEL = {
+  openai: 'sora-2',
+  google: 'veo-3.1-generate-preview',
+};
+const PROVIDER_MODEL_PLACEHOLDER = {
+  openai: 'sora-2 (default)',
+  google: 'veo-3.1-generate-preview',
+};
+const PROVIDER_API_PLACEHOLDER = {
+  openai: 'OpenAI API key (sk-...)',
+  google: 'Gemini API key (AIza...)',
+};
+const VALID_PROVIDERS = Object.keys(PROVIDER_KEY_MAP);
+
+let selectedProvider = 'openai';
+let selectedReferenceUrl = '';
+
+let cameraStream = null;
+let cameraFrameRequest = null;
+let cameraVideoElement = null;
+let capturedBlob = null;
 
 (() => {
-  const storedKey = window.localStorage.getItem(LOCAL_STORAGE_KEY);
-  if (storedKey) {
-    apiKeyInput.value = storedKey;
-    rememberKeyCheckbox.checked = true;
+  const storedProvider = window.localStorage.getItem(PROVIDER_STORAGE_KEY);
+  if (storedProvider && VALID_PROVIDERS.includes(storedProvider)) {
+    selectedProvider = storedProvider;
+  }
+
+  if (providerSelect) {
+    providerSelect.value = selectedProvider;
   }
 
   const storedModel = window.localStorage.getItem(MODEL_STORAGE_KEY);
   if (storedModel) {
     modelInput.value = storedModel;
   }
+
+  applyProviderSelection(selectedProvider, { preserveModel: Boolean(modelInput.value?.trim()) });
 })();
 
 refreshHistory();
+refreshReferences();
+
+if (openCameraButton) {
+  openCameraButton.addEventListener('click', (event) => {
+    event.preventDefault();
+    startCamera();
+  });
+}
+
+if (captureFrameButton) {
+  captureFrameButton.addEventListener('click', (event) => {
+    event.preventDefault();
+    captureCameraFrame();
+  });
+}
+
+if (closeCameraButton) {
+  closeCameraButton.addEventListener('click', (event) => {
+    event.preventDefault();
+    stopCamera();
+    resetCapturedFrame();
+  });
+}
+
+if (providerSelect) {
+  providerSelect.addEventListener('change', (event) => {
+    const value = (event.target.value || '').toLowerCase();
+    selectedProvider = VALID_PROVIDERS.includes(value) ? value : 'openai';
+    applyProviderSelection(selectedProvider);
+  });
+}
+
+if (referencesList) {
+  referencesList.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-reference-url]');
+    if (!button) return;
+    const url = button.getAttribute('data-reference-url');
+    selectReference(url);
+  });
+}
+
+function applyProviderSelection(provider, { preserveModel = false } = {}) {
+  const normalized = VALID_PROVIDERS.includes(provider) ? provider : 'openai';
+  selectedProvider = normalized;
+
+  if (providerSelect) {
+    providerSelect.value = normalized;
+  }
+
+  window.localStorage.setItem(PROVIDER_STORAGE_KEY, normalized);
+
+  const defaultModel = PROVIDER_DEFAULT_MODEL[normalized] || 'sora-2';
+  const otherDefaults = VALID_PROVIDERS.filter((key) => key !== normalized).map((key) =>
+    (PROVIDER_DEFAULT_MODEL[key] || '').toLowerCase()
+  );
+
+  if (modelInput) {
+    const currentModel = (modelInput.value || '').trim();
+    const normalizedCurrent = currentModel.toLowerCase();
+    if (!currentModel || otherDefaults.includes(normalizedCurrent)) {
+      modelInput.value = defaultModel;
+    }
+    modelInput.placeholder = PROVIDER_MODEL_PLACEHOLDER[normalized] || '';
+    window.localStorage.setItem(MODEL_STORAGE_KEY, modelInput.value.trim());
+  }
+
+  const storedKey = getStoredApiKey(normalized);
+  if (apiKeyInput) {
+    if (storedKey) {
+      apiKeyInput.value = storedKey;
+      if (rememberKeyCheckbox) {
+        rememberKeyCheckbox.checked = true;
+      }
+    } else if (!preserveModel) {
+      apiKeyInput.value = '';
+      if (rememberKeyCheckbox) {
+        rememberKeyCheckbox.checked = false;
+      }
+    } else if (rememberKeyCheckbox) {
+      rememberKeyCheckbox.checked = Boolean(storedKey);
+    }
+
+    apiKeyInput.placeholder = PROVIDER_API_PLACEHOLDER[normalized] || '';
+  }
+
+  if (loadRemoteButton) {
+    loadRemoteButton.disabled = normalized !== 'openai';
+  }
+
+  if (remoteStatus) {
+    if (normalized !== 'openai') {
+      remoteStatus.textContent = 'Switch to OpenAI provider to view remote videos.';
+      remoteStatus.classList.add('status', 'status--error');
+    } else {
+      remoteStatus.textContent = '';
+      remoteStatus.classList.remove('status--error', 'status--success');
+    }
+  }
+
+  if (normalized !== 'openai') {
+    renderRemoteVideos([]);
+    if (remoteEmpty) remoteEmpty.style.display = 'block';
+  }
+}
+
+function getStoredApiKey(provider) {
+  const keyName = PROVIDER_KEY_MAP[provider];
+  if (!keyName) return '';
+  return window.localStorage.getItem(keyName) || '';
+}
+
+function setStoredApiKey(provider, apiKey) {
+  const keyName = PROVIDER_KEY_MAP[provider];
+  if (!keyName) return;
+  if (apiKey) {
+    window.localStorage.setItem(keyName, apiKey);
+  }
+}
+
+function clearStoredApiKey(provider) {
+  const keyName = PROVIDER_KEY_MAP[provider];
+  if (!keyName) return;
+  window.localStorage.removeItem(keyName);
+}
+
+if (referenceInput) {
+  referenceInput.addEventListener('change', () => {
+    if (referenceInput.files?.length) {
+      clearReferenceSelection();
+      capturedBlob = null;
+      resetCapturedFrame();
+      stopCamera();
+    }
+  });
+}
 
 modelInput.addEventListener('change', () => {
   const value = modelInput.value.trim();
@@ -64,9 +244,9 @@ soraForm.addEventListener('submit', async (event) => {
   renderStatus('Submitting prompt to the video API…');
 
   if (rememberKeyCheckbox.checked && apiKey) {
-    window.localStorage.setItem(LOCAL_STORAGE_KEY, apiKey);
+    setStoredApiKey(selectedProvider, apiKey);
   } else if (!rememberKeyCheckbox.checked) {
-    window.localStorage.removeItem(LOCAL_STORAGE_KEY);
+    clearStoredApiKey(selectedProvider);
   }
 
   let pendingStatusTimer;
@@ -79,14 +259,26 @@ soraForm.addEventListener('submit', async (event) => {
     const result = await generateVideo({ apiKey });
     const videoUrl = result?.videoUrl;
     const modelName = formatModel(result?.model);
+    const referenceFromResponse = typeof result?.referenceUrl === 'string' ? result.referenceUrl : '';
 
     if (!videoUrl) {
       throw new Error('The server response did not contain a video URL.');
     }
 
+    if (referenceFromResponse) {
+      selectedReferenceUrl = referenceFromResponse;
+      if (referenceUrlInput) {
+        referenceUrlInput.value = referenceFromResponse;
+      }
+      capturedBlob = null;
+      if (referenceInput) {
+        referenceInput.value = '';
+      }
+    }
+
     renderStatus(modelName ? `Video ready from ${modelName}!` : 'Video ready!', 'success');
     showVideo(videoUrl);
-    await refreshHistory();
+    await Promise.all([refreshHistory(), refreshReferences({ silent: true })]);
   } catch (error) {
     console.error(error);
     renderStatus(error.message || 'An unexpected error occurred.', 'error');
@@ -112,6 +304,7 @@ historyList.addEventListener('click', (event) => {
 
   showVideo(url);
   renderStatus('Loaded video from history.', 'success');
+  openFullVideo(url);
 });
 
 remoteList.addEventListener('click', async (event) => {
@@ -125,6 +318,7 @@ remoteList.addEventListener('click', async (event) => {
   if (downloaded && localUrl) {
     showVideo(localUrl);
     renderStatus('Loaded previously downloaded video.', 'success');
+    openFullVideo(localUrl);
     return;
   }
 
@@ -164,6 +358,7 @@ remoteList.addEventListener('click', async (event) => {
         modelName ? `Remote ${modelName} video downloaded and loaded.` : 'Remote video downloaded and loaded.',
         'success'
       );
+      openFullVideo(videoUrl);
     }
 
     await Promise.all([refreshHistory(), refreshRemoteVideos({ silent: true })]);
@@ -179,6 +374,10 @@ remoteList.addEventListener('click', async (event) => {
 async function generateVideo({ apiKey }) {
   const formData = new FormData();
   formData.append('prompt', promptInput.value.trim());
+  formData.append('provider', selectedProvider);
+  if (referenceUrlInput) {
+    formData.append('reference_url', (referenceUrlInput.value || '').trim());
+  }
 
   const model = modelInput.value.trim();
   if (model) {
@@ -195,7 +394,9 @@ async function generateVideo({ apiKey }) {
     formData.append('size', size);
   }
 
-  if (referenceInput.files?.length) {
+  if (capturedBlob instanceof Blob) {
+    formData.append('input_reference', capturedBlob, 'camera-reference.png');
+  } else if (referenceInput.files?.length) {
     formData.append('input_reference', referenceInput.files[0]);
   }
 
@@ -249,6 +450,10 @@ function toggleSubmittingState(isSubmitting) {
   referenceInput.disabled = isSubmitting;
   apiKeyInput.disabled = isSubmitting;
   rememberKeyCheckbox.disabled = isSubmitting;
+  if (providerSelect) providerSelect.disabled = isSubmitting;
+  if (openCameraButton) openCameraButton.disabled = isSubmitting;
+  if (captureFrameButton) captureFrameButton.disabled = isSubmitting;
+  if (closeCameraButton) closeCameraButton.disabled = isSubmitting;
 }
 
 function renderStatus(message, type) {
@@ -284,6 +489,15 @@ async function refreshRemoteVideos({ silent = false } = {}) {
       loadRemoteButton.disabled = true;
     }
 
+    if (selectedProvider !== 'openai') {
+      renderRemoteVideos([]);
+      if (!silent) {
+        setRemoteStatus('Remote videos are only available for OpenAI Sora models.', 'error');
+      }
+      remoteEmpty.style.display = 'block';
+      return;
+    }
+
     const apiKey = apiKeyInput.value.trim();
     const payload = {};
     if (apiKey) {
@@ -315,7 +529,7 @@ async function refreshRemoteVideos({ silent = false } = {}) {
     renderRemoteVideos([]);
     setRemoteStatus(error.message || 'Unable to load remote videos.', 'error');
   } finally {
-    loadRemoteButton.disabled = false;
+    loadRemoteButton.disabled = selectedProvider !== 'openai';
   }
 }
 
@@ -331,31 +545,46 @@ function renderHistory(videos) {
 
   for (const video of videos) {
     const li = document.createElement('li');
-    li.className = 'history-entry';
-
-    const meta = document.createElement('div');
-    meta.className = 'history-entry__meta';
-
-    const prompt = document.createElement('p');
-    prompt.className = 'history-entry__prompt';
-    prompt.textContent = video.prompt || '(no prompt provided)';
-
-    const time = document.createElement('span');
-    time.className = 'history-entry__time';
-    const historyDetails = [formatTimestamp(video.createdAt), formatModel(video.model)];
-    time.textContent = historyDetails.filter(Boolean).join(' • ');
-
-    meta.appendChild(prompt);
-    meta.appendChild(time);
+    li.className = 'history-thumb';
 
     const button = document.createElement('button');
     button.type = 'button';
     button.dataset.historyPlay = 'true';
     button.dataset.url = video.url;
-    button.textContent = 'Play';
+    button.className = 'history-thumb__button';
 
-    li.appendChild(meta);
+    const previewVideo = document.createElement('video');
+    previewVideo.className = 'history-thumb__video';
+    previewVideo.src = video.url;
+    previewVideo.preload = 'metadata';
+    previewVideo.muted = true;
+    previewVideo.playsInline = true;
+    previewVideo.loop = true;
+    previewVideo.setAttribute('preload', 'metadata');
+    previewVideo.setAttribute('muted', '');
+    previewVideo.setAttribute('playsinline', '');
+    previewVideo.setAttribute('loop', '');
+
+    button.appendChild(previewVideo);
+    attachThumbnailPreview(button, previewVideo);
+
+    const caption = document.createElement('div');
+    caption.className = 'history-thumb__caption';
+
+    const title = document.createElement('p');
+    title.className = 'history-thumb__title';
+    title.textContent = video.prompt || '(no prompt provided)';
+
+    const meta = document.createElement('span');
+    meta.className = 'history-thumb__meta';
+    const historyDetails = [formatTimestamp(video.createdAt), formatModel(video.model)];
+    meta.textContent = historyDetails.filter(Boolean).join(' • ');
+
+    caption.appendChild(title);
+    caption.appendChild(meta);
+
     li.appendChild(button);
+    li.appendChild(caption);
     historyList.appendChild(li);
   }
 }
@@ -412,6 +641,145 @@ function renderRemoteVideos(videos) {
   }
 }
 
+async function refreshReferences({ silent = false } = {}) {
+  if (!referencesList) return;
+
+  try {
+    if (!silent && referencesStatus) {
+      referencesStatus.textContent = 'Loading saved references…';
+      referencesStatus.classList.remove('status--error', 'status--success');
+    }
+
+    const response = await fetch(REFERENCES_ENDPOINT, { method: 'GET' });
+    if (!response.ok) {
+      throw new Error(`Failed to load references (status ${response.status}).`);
+    }
+
+    const payload = await response.json();
+    const references = Array.isArray(payload?.references) ? payload.references : [];
+    renderReferences(references);
+
+    if (!silent && referencesStatus) {
+      referencesStatus.classList.remove('status--error', 'status--success');
+      if (references.length) {
+        referencesStatus.textContent = 'Saved references ready.';
+        referencesStatus.classList.add('status', 'status--success');
+      } else {
+        referencesStatus.textContent = '';
+      }
+    }
+  } catch (error) {
+    console.error(error);
+    if (!silent && referencesStatus) {
+      referencesStatus.textContent = error.message || 'Unable to load saved references.';
+      referencesStatus.classList.add('status', 'status--error');
+    }
+    renderReferences([]);
+  }
+}
+
+function renderReferences(references) {
+  if (!referencesList) return;
+
+  referencesList.innerHTML = '';
+
+  if (!references.length) {
+    if (referencesEmpty) referencesEmpty.style.display = 'block';
+    updateReferenceSelectionUI();
+    return;
+  }
+
+  if (referencesEmpty) referencesEmpty.style.display = 'none';
+
+  for (const reference of references) {
+    const li = document.createElement('li');
+    li.className = 'reference-thumb';
+
+    if (reference?.url === selectedReferenceUrl) {
+      li.classList.add('reference-thumb--selected');
+    }
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'reference-thumb__button';
+    button.dataset.referenceUrl = reference?.url;
+
+    const img = document.createElement('img');
+    img.className = 'reference-thumb__image';
+    img.src = reference?.url;
+    img.alt = reference?.fileName || 'Saved reference';
+
+    button.appendChild(img);
+    li.appendChild(button);
+    referencesList.appendChild(li);
+  }
+
+  updateReferenceSelectionUI();
+}
+
+function updateReferenceSelectionUI() {
+  if (!referencesList) return;
+  const items = referencesList.querySelectorAll('.reference-thumb');
+  items.forEach((item) => {
+    const button = item.querySelector('[data-reference-url]');
+    const url = button?.getAttribute('data-reference-url');
+    if (url && url === selectedReferenceUrl) {
+      item.classList.add('reference-thumb--selected');
+    } else {
+      item.classList.remove('reference-thumb--selected');
+    }
+  });
+}
+
+function selectReference(url) {
+  const normalized = typeof url === 'string' ? url.trim() : '';
+  if (!normalized || normalized === selectedReferenceUrl) {
+    clearReferenceSelection();
+    return;
+  }
+
+  selectedReferenceUrl = normalized;
+  if (referenceUrlInput) {
+    referenceUrlInput.value = normalized;
+  }
+  if (referenceInput) {
+    referenceInput.value = '';
+  }
+  capturedBlob = null;
+  updateReferenceSelectionUI();
+  stopCamera();
+  resetCapturedFrame();
+  renderStatus('Selected saved reference image.', 'success');
+}
+
+function clearReferenceSelection() {
+  selectedReferenceUrl = '';
+  if (referenceUrlInput) {
+    referenceUrlInput.value = '';
+  }
+  updateReferenceSelectionUI();
+}
+
+function attachThumbnailPreview(button, videoElement) {
+  const tryPlay = () => {
+    videoElement.currentTime = 0;
+    const playPromise = videoElement.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch(() => {});
+    }
+  };
+
+  const reset = () => {
+    videoElement.pause();
+    videoElement.currentTime = 0;
+  };
+
+  button.addEventListener('mouseenter', tryPlay);
+  button.addEventListener('focus', tryPlay);
+  button.addEventListener('mouseleave', reset);
+  button.addEventListener('blur', reset);
+}
+
 function setRemoteStatus(message, type) {
   remoteStatus.textContent = message;
   remoteStatus.classList.remove('status--error', 'status--success');
@@ -423,11 +791,197 @@ function setRemoteStatus(message, type) {
   }
 }
 
+function openFullVideo(url) {
+  if (!fullVideoModal || !fullVideoPlayer || !url) return;
+
+  fullVideoPlayer.src = url;
+  fullVideoPlayer.load();
+
+  fullVideoModal.classList.add('video-modal--open');
+  fullVideoModal.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('modal-open');
+
+  const playPromise = fullVideoPlayer.play();
+  if (playPromise && typeof playPromise.catch === 'function') {
+    playPromise.catch(() => {});
+  }
+}
+
+function closeFullVideo() {
+  if (!fullVideoModal || !fullVideoPlayer) return;
+  fullVideoPlayer.pause();
+  fullVideoPlayer.removeAttribute('src');
+  fullVideoPlayer.load();
+
+  fullVideoModal.classList.remove('video-modal--open');
+  fullVideoModal.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('modal-open');
+}
+
+if (modalCloseButton) {
+  modalCloseButton.addEventListener('click', closeFullVideo);
+}
+
+if (fullVideoModal) {
+  fullVideoModal.addEventListener('click', (event) => {
+    if (event.target && event.target.dataset && event.target.dataset.modalClose !== undefined) {
+      closeFullVideo();
+    }
+  });
+}
+
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && fullVideoModal?.classList.contains('video-modal--open')) {
+    closeFullVideo();
+  }
+});
+
+window.addEventListener('beforeunload', () => {
+  if (cameraStream) {
+    stopCamera();
+  }
+});
+
+async function startCamera() {
+  if (!cameraPreview || !navigator.mediaDevices?.getUserMedia) {
+    renderStatus('Camera access is not supported in this browser.', 'error');
+    return;
+  }
+
+  try {
+    if (openCameraButton) {
+      openCameraButton.disabled = true;
+    }
+    resetCapturedFrame();
+    clearReferenceSelection();
+    if (referenceUrlInput) {
+      referenceUrlInput.value = '';
+    }
+    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    cameraVideoElement = document.createElement('video');
+    cameraVideoElement.srcObject = cameraStream;
+    cameraVideoElement.playsInline = true;
+    cameraVideoElement.muted = true;
+    await cameraVideoElement.play();
+
+    const trackSettings = cameraStream.getVideoTracks()[0]?.getSettings() || {};
+    const width = trackSettings.width || 640;
+    const height = trackSettings.height || 360;
+    cameraPreview.width = width;
+    cameraPreview.height = height;
+    cameraPreview.hidden = false;
+
+    if (cameraActions) {
+      cameraActions.hidden = false;
+    }
+    if (openCameraButton) {
+      openCameraButton.hidden = true;
+    }
+    if (captureFrameButton) captureFrameButton.disabled = false;
+    if (closeCameraButton) closeCameraButton.disabled = false;
+
+    const ctx = cameraPreview.getContext('2d');
+    const drawFrame = () => {
+      if (!cameraStream || !ctx) return;
+      ctx.drawImage(cameraVideoElement, 0, 0, cameraPreview.width, cameraPreview.height);
+      cameraFrameRequest = requestAnimationFrame(drawFrame);
+    };
+    drawFrame();
+
+    renderStatus('Camera ready. Capture a frame when ready.', 'success');
+  } catch (error) {
+    console.error('Camera start failed', error);
+    renderStatus(error.message || 'Unable to access the camera.', 'error');
+    stopCamera();
+  }
+}
+
+function captureCameraFrame() {
+  if (!cameraPreview || cameraPreview.hidden) {
+    renderStatus('Start the camera before capturing a frame.', 'error');
+    return;
+  }
+
+  cameraPreview.toBlob(
+    (blob) => {
+      if (blob) {
+        capturedBlob = blob;
+        renderStatus('Captured camera frame for video generation.', 'success');
+        if (captureFrameButton) {
+          captureFrameButton.textContent = 'Frame Captured';
+          captureFrameButton.disabled = true;
+        }
+        clearReferenceSelection();
+        if (referenceUrlInput) {
+          referenceUrlInput.value = '';
+        }
+        stopCamera({ keepFrame: true });
+      } else {
+        renderStatus('Failed to capture frame.', 'error');
+      }
+    },
+    'image/png',
+    0.95
+  );
+}
+
+function stopCamera({ keepFrame = false } = {}) {
+  if (cameraFrameRequest !== null) {
+    cancelAnimationFrame(cameraFrameRequest);
+    cameraFrameRequest = null;
+  }
+
+  if (cameraVideoElement) {
+    cameraVideoElement.pause();
+    cameraVideoElement.srcObject = null;
+    cameraVideoElement = null;
+  }
+
+  if (cameraStream) {
+    for (const track of cameraStream.getTracks()) {
+      track.stop();
+    }
+    cameraStream = null;
+  }
+
+  if (cameraPreview) {
+    const ctx = cameraPreview.getContext('2d');
+    if (!keepFrame && ctx) {
+      ctx.clearRect(0, 0, cameraPreview.width, cameraPreview.height);
+    }
+    cameraPreview.hidden = keepFrame ? false : true;
+  }
+
+  if (cameraActions) {
+    cameraActions.hidden = true;
+  }
+
+  if (openCameraButton) {
+    openCameraButton.hidden = false;
+    openCameraButton.disabled = false;
+  }
+}
+
+function resetCapturedFrame() {
+  capturedBlob = null;
+  if (captureFrameButton) {
+    captureFrameButton.textContent = 'Capture Frame';
+    captureFrameButton.disabled = false;
+  }
+  if (cameraPreview) {
+    const ctx = cameraPreview.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, cameraPreview.width, cameraPreview.height);
+    }
+    cameraPreview.hidden = true;
+  }
+}
+
 function formatModel(model) {
   if (!model) return '';
   const normalized = model.toLowerCase();
-  if (normalized === 'sora-2') return 'Sora v2';
-  if (normalized === 'veo-3') return 'Veo 3';
+  if (normalized === 'sora-2' || normalized.startsWith('sora-2')) return 'Sora v2';
+  if (normalized === 'veo-3' || normalized.startsWith('veo-3')) return 'Veo 3';
   return model;
 }
 

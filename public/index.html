@@ -13,115 +13,158 @@
         <p>Generate a Sora or Veo video by providing a prompt and optionally your OpenAI API key.</p>
       </header>
 
-      <section class="card">
-        <form id="soraForm" class="form">
-          <label class="form__field">
-            <span>Prompt</span>
-            <textarea
-              id="promptInput"
-              name="prompt"
-              placeholder="Describe the video you want Sora or Veo to create..."
-              rows="4"
-              required
-            ></textarea>
-          </label>
+      <div class="app__content">
+        <div class="app__main">
+          <section class="card card--history">
+            <h2>Previous Videos</h2>
+            <p id="historyEmpty" class="history-empty">No videos yet. Generate or download one to see it here.</p>
+            <ul id="historyList" class="history-list history-gallery" aria-live="polite"></ul>
+          </section>
+
+          <section class="card card--preview">
+            <h2>Video Preview</h2>
+            <div class="video-wrapper">
+              <video id="videoPlayer" controls preload="none" aria-label="Generated video preview"></video>
+              <div id="videoPlaceholder" class="video-placeholder">Your generated video will appear here.</div>
+            </div>
+            <a id="downloadLink" class="download-link" href="#" download hidden>Download video</a>
+          </section>
+
+          <section class="card card--remote">
+            <h2>Remote Videos</h2>
+            <div class="remote-actions">
+              <button id="loadRemoteButton" type="button">Load Remote Videos</button>
+            </div>
+            <div id="remoteStatus" class="status" role="status"></div>
+            <p id="remoteEmpty" class="history-empty">Enter an API key and load to see remote videos in your OpenAI account.</p>
+            <ul id="remoteList" class="history-list" aria-live="polite"></ul>
+          </section>
+
+          <section class="card card--references">
+            <h2>Saved References</h2>
+            <div id="referencesStatus" class="status" role="status"></div>
+            <p id="referencesEmpty" class="history-empty">No saved references yet. Capture or upload an image to store it here.</p>
+            <ul id="referencesList" class="references-grid" aria-live="polite"></ul>
+          </section>
+        </div>
+
+        <aside class="app__sidebar">
+          <section class="card card--form">
+            <form id="soraForm" class="form">
+              <label class="form__field">
+                <span>Prompt</span>
+                <textarea
+                  id="promptInput"
+                  name="prompt"
+                  placeholder="Describe the video you want Sora or Veo to create..."
+                  rows="4"
+                  required
+                ></textarea>
+              </label>
 
           <div class="form__grid">
+            <label class="form__field">
+              <span>Provider</span>
+              <select id="providerSelect" name="provider">
+                <option value="openai">OpenAI (Sora)</option>
+                <option value="google">Google (Veo)</option>
+              </select>
+            </label>
+
             <label class="form__field">
               <span>Model</span>
               <input
                 id="modelInput"
                 name="model"
-                type="text"
-                placeholder="sora-2 (default) or veo-3"
-                list="modelOptions"
-              />
-              <datalist id="modelOptions">
-                <option value="sora-2"></option>
-                <option value="veo-3"></option>
-              </datalist>
-            </label>
+                    type="text"
+                    placeholder="sora-2 (default) or veo-3 (mapped to veo-3.1 preview)"
+                    list="modelOptions"
+                  />
+                  <datalist id="modelOptions">
+                    <option value="sora-2"></option>
+                    <option value="veo-3"></option>
+                    <option value="veo-3.1-generate-preview"></option>
+                  </datalist>
+                </label>
 
-            <label class="form__field">
-              <span>Duration (seconds)</span>
-              <input
-                id="durationInput"
-                name="seconds"
-                type="number"
-                min="1"
-                max="60"
-                step="1"
-                placeholder="4"
-              />
-            </label>
+                <label class="form__field">
+                  <span>Duration (seconds)</span>
+                  <input
+                    id="durationInput"
+                    name="seconds"
+                    type="number"
+                    min="1"
+                    max="60"
+                    step="1"
+                    placeholder="4"
+                  />
+                </label>
 
-            <label class="form__field">
-              <span>Resolution (width x height)</span>
-              <input
-                id="sizeInput"
-                name="size"
-                type="text"
-                placeholder="720x1280"
-                pattern="^\d+x\d+$"
-              />
-            </label>
-          </div>
+                <label class="form__field">
+                  <span>Resolution (width x height)</span>
+                  <input
+                    id="sizeInput"
+                    name="size"
+                    type="text"
+                    placeholder="720x1280"
+                    pattern="^\d+x\d+$"
+                  />
+                </label>
+              </div>
 
-          <label class="form__field">
-            <span>Upload Reference (image/video)</span>
-            <input
-              id="referenceInput"
-              name="input_reference"
-              type="file"
-              accept="image/*,video/*"
-            />
-          </label>
+              <label class="form__field">
+                <span>Upload Reference (image/video)</span>
+                <input
+                  id="referenceInput"
+                  name="input_reference"
+                  type="file"
+                  accept="image/*,video/*"
+                />
+              </label>
 
-          <label class="form__field">
-            <span>OpenAI API Key (optional)</span>
-            <input
-              id="apiKeyInput"
-              type="password"
-              name="apiKey"
-              placeholder="sk-... (leave blank to use server key)"
-            />
-          </label>
+              <label class="form__field camera-control">
+                <span>Capture Reference (camera)</span>
+                <button type="button" id="openCameraButton">Open Camera</button>
+                <canvas id="cameraPreview" class="camera-preview" hidden></canvas>
+                <div class="camera-actions" hidden>
+                  <button type="button" id="captureFrameButton">Capture Frame</button>
+                  <button type="button" id="closeCameraButton">Close Camera</button>
+                </div>
+              </label>
 
-          <label class="form__checkbox">
-            <input type="checkbox" id="rememberKey" />
-            <span>Remember API key on this device</span>
-          </label>
+              <label class="form__field">
+                <span>API Key (optional)</span>
+                <input
+                  id="apiKeyInput"
+                  type="password"
+                  name="apiKey"
+                  placeholder="OpenAI or Gemini key"
+                />
+              </label>
 
-          <button id="submitButton" type="submit">Generate Video</button>
-        </form>
+              <label class="form__checkbox">
+                <input type="checkbox" id="rememberKey" />
+                <span>Remember API key on this device</span>
+              </label>
 
-        <div id="statusMessage" class="status" role="status"></div>
-      </section>
+            <button id="submitButton" type="submit">Generate Video</button>
+            <input type="hidden" id="referenceUrlInput" name="reference_url" />
+          </form>
 
-      <section class="card">
-        <h2>Video Preview</h2>
-        <div class="video-wrapper">
-          <video id="videoPlayer" controls preload="none" aria-label="Generated video preview"></video>
-          <div id="videoPlaceholder" class="video-placeholder">Your generated video will appear here.</div>
+          <div id="statusMessage" class="status" role="status"></div>
+        </section>
+        </aside>
+      </div>
+
+      <div id="fullVideoModal" class="video-modal" aria-hidden="true">
+        <div class="video-modal__backdrop" data-modal-close></div>
+        <div class="video-modal__content" role="dialog" aria-modal="true" aria-label="Full screen video player">
+          <button type="button" class="video-modal__close" id="modalCloseButton" data-modal-close aria-label="Close full screen video">
+            ✕
+          </button>
+          <video id="fullVideoPlayer" class="video-modal__video" controls autoplay></video>
         </div>
-        <a id="downloadLink" class="download-link" href="#" download hidden>Download video</a>
-      </section>
-
-      <section class="card">
-        <h2>Previous Videos</h2>
-        <p id="historyEmpty" class="history-empty">No videos yet. Generate or download one to see it here.</p>
-        <ul id="historyList" class="history-list" aria-live="polite"></ul>
-      </section>
-
-      <section class="card">
-        <h2>Remote Videos</h2>
-        <div class="remote-actions">
-          <button id="loadRemoteButton" type="button">Load Remote Videos</button>
-        </div>
-        <div id="remoteStatus" class="status" role="status"></div>
-        <p id="remoteEmpty" class="history-empty">Enter an API key and load to see remote videos in your OpenAI account.</p>
-        <ul id="remoteList" class="history-list" aria-live="polite"></ul>
-      </section>
+      </div>
     </main>
 
     <script src="app.js"></script>
